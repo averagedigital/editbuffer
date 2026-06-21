@@ -5,7 +5,7 @@ before it is committed.
 
 The public abstraction is selection-based editing, not file patches:
 
-- select exact text, contextual text, or a character range;
+- select exact, contextual, fuzzy, block, or character-range targets;
 - replace, insert before/after, or delete the selection;
 - reject missing, ambiguous, invalid, and stale selections;
 - inspect the current buffer and its audit history;
@@ -23,7 +23,7 @@ For local development:
 python -m pip install -e .
 ```
 
-Python 3.11+ is required. The library has no runtime dependencies.
+Python 3.11+ is required. The core library has no runtime dependencies.
 
 ## Quickstart
 
@@ -91,7 +91,59 @@ Range selections use half-open character offsets and can reject stale edits:
 - invalid ranges or operations raise `InvalidOperationError`;
 - a mismatched `expected_version` raises `StaleVersionError`;
 - validator failures do not mutate text or history;
-- fuzzy matching is not performed.
+- fuzzy matching is opt-in and rejects low-confidence or competing candidates.
+
+## Fuzzy and block selections
+
+Fuzzy selection uses the standard library and records the accepted confidence:
+
+```python
+buf.replace(
+    Selection.fuzzy(
+        "run integrtion tests",
+        threshold=0.85,
+        ambiguity_margin=0.05,
+    ),
+    "run unit tests",
+)
+```
+
+It never runs as a fallback for exact/context selection. If no candidate meets
+the threshold, or two candidates are too close, `FuzzyMatchError` includes
+candidate ranges and scores.
+
+Block selection requires an explicit ID. Fenced code blocks use:
+
+````markdown
+```python editbuffer:id=setup
+print("old")
+```
+````
+
+Markdown regions use:
+
+```markdown
+<!-- editbuffer:block summary -->
+old content
+<!-- /editbuffer:block -->
+```
+
+`Selection.block("setup")` selects the content inside the markers, preserving
+the fence or comments. Duplicate IDs are rejected as ambiguous.
+
+## Snapshots and rollback
+
+Every successful edit stores an in-memory snapshot:
+
+```python
+buf.append("draft")
+version = buf.version
+buf.replace(Selection.exact("draft"), "final")
+buf.rollback(version)
+```
+
+Rollback restores the snapshot as a new audited version. Snapshots live only
+for the lifetime of the `EditBuffer` process.
 
 ## Optional validators
 
@@ -115,6 +167,7 @@ editbuffer new /tmp/output.json --text "hello world"
 editbuffer replace /tmp/output.json '{"type":"exact","text":"world"}' "there"
 editbuffer view /tmp/output.json
 editbuffer history /tmp/output.json
+editbuffer rollback /tmp/output.json 1
 editbuffer commit /tmp/output.json
 ```
 
@@ -122,12 +175,39 @@ Use `editbuffer apply STATE OPERATION_JSON` for the complete operation schema.
 
 ## MCP / agent integration
 
-Expose one buffer per pending artifact and map a host tool call directly to
-`EditBuffer.apply()`. The tool input is the JSON operation object shown above;
-the tool result should return `view()`, `version`, and typed errors. Buffer
-storage, authentication, and artifact commit destinations belong to the host.
+Install the optional server:
 
-A full MCP server is intentionally not included in v1.
+```bash
+pipx install 'editbuffer[mcp]'
+```
+
+Until a PyPI release exists, install directly from GitHub:
+
+```bash
+pipx install 'editbuffer[mcp] @ git+https://github.com/averagedigital/editbuffer.git'
+```
+
+Connect it to Codex:
+
+```bash
+codex mcp add editbuffer -- editbuffer-mcp
+```
+
+Codex supports local STDIO MCP servers configured with `codex mcp add`; use
+`/mcp` in the Codex terminal UI to confirm the server is active.
+
+The server exposes:
+
+- `buffer_create`
+- `buffer_list`
+- `buffer_view`
+- `buffer_edit`
+- `buffer_history`
+- `buffer_rollback`
+- `buffer_commit`
+
+Buffers are in-memory and live for the MCP server process. The MCP layer calls
+the same core API and does not implement separate edit semantics.
 
 ## Examples
 
@@ -145,8 +225,8 @@ This project is not:
 - a replacement for coding agents;
 - a generic output quality evaluator.
 
-Fuzzy selection, block IDs, persistent rollback, atomic operation batches,
-TypeScript bindings, and an MCP server are future work.
+Persistent storage, atomic operation batches, TypeScript bindings, and
+syntax-aware block parsing are future work.
 
 ## Development
 
