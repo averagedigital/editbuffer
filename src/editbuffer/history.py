@@ -13,6 +13,7 @@ class EditRecord:
     after: str
     version_before: int
     version_after: int
+    confidence: float = 1.0
 
 
 class EditHistory:

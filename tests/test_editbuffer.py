@@ -3,6 +3,7 @@ import unittest
 from editbuffer import (
     AmbiguousTargetError,
     EditBuffer,
+    FuzzyMatchError,
     InvalidOperationError,
     Selection,
     StaleVersionError,
@@ -43,6 +44,73 @@ class EditBufferTests(unittest.TestCase):
         buffer.replace(Selection.range(1, 4, expected_version=0), "X")
 
         self.assertEqual(buffer.view(), "aXef")
+
+    def test_fuzzy_replace_is_explicit_and_audited(self) -> None:
+        buffer = EditBuffer("run integration tests now")
+
+        record = buffer.replace(
+            Selection.fuzzy("run integrtion tests", threshold=0.8),
+            "run unit tests",
+        )
+
+        self.assertEqual(buffer.view(), "run unit tests now")
+        self.assertLess(record.confidence, 1.0)
+
+    def test_fuzzy_replace_rejects_close_competing_targets(self) -> None:
+        buffer = EditBuffer("install package-a\ninstall package-b")
+
+        with self.assertRaises(FuzzyMatchError) as error:
+            buffer.replace(
+                Selection.fuzzy(
+                    "install package-c",
+                    threshold=0.8,
+                    ambiguity_margin=0.1,
+                ),
+                "install package-d",
+            )
+
+        self.assertEqual(error.exception.reason, "ambiguous")
+        self.assertGreaterEqual(len(error.exception.candidates), 2)
+        self.assertEqual(buffer.view(), "install package-a\ninstall package-b")
+
+    def test_fuzzy_replace_rejects_low_confidence_target(self) -> None:
+        buffer = EditBuffer("unrelated content")
+
+        with self.assertRaises(FuzzyMatchError) as error:
+            buffer.delete(Selection.fuzzy("target text", threshold=0.9))
+
+        self.assertEqual(error.exception.reason, "below_threshold")
+        self.assertGreater(len(error.exception.candidates), 0)
+
+    def test_fenced_code_block_selection(self) -> None:
+        buffer = EditBuffer(
+            "before\n```python editbuffer:id=setup\nprint('old')\n```\nafter"
+        )
+
+        buffer.replace(Selection.block("setup"), "print('new')\n")
+
+        self.assertEqual(
+            buffer.view(),
+            "before\n```python editbuffer:id=setup\nprint('new')\n```\nafter",
+        )
+
+    def test_markdown_region_block_selection(self) -> None:
+        buffer = EditBuffer(
+            "before\n<!-- editbuffer:block summary -->\nold\n"
+            "<!-- /editbuffer:block -->\nafter"
+        )
+
+        buffer.replace(Selection.block("summary"), "new\n")
+
+        self.assertIn("<!-- editbuffer:block summary -->\nnew\n<!-- /editbuffer:block -->", buffer.view())
+
+    def test_duplicate_block_id_is_ambiguous(self) -> None:
+        buffer = EditBuffer(
+            "``` editbuffer:id=x\na\n```\n``` editbuffer:id=x\nb\n```"
+        )
+
+        with self.assertRaises(AmbiguousTargetError):
+            buffer.delete(Selection.block("x"))
 
     def test_delete_and_insert(self) -> None:
         buffer = EditBuffer("alpha beta gamma")
@@ -154,6 +222,28 @@ class EditBufferTests(unittest.TestCase):
 
         self.assertEqual(buffer.view(), '{"ok": true}')
         self.assertEqual(len(buffer.history), 0)
+
+    def test_rollback_restores_snapshot_and_creates_new_version(self) -> None:
+        buffer = EditBuffer("a")
+        buffer.append("b")
+        buffer.append("c")
+
+        buffer.rollback(1)
+
+        self.assertEqual(buffer.view(), "ab")
+        self.assertEqual(buffer.version, 3)
+        self.assertEqual(buffer.versions, (0, 1, 2, 3))
+        self.assertEqual(buffer.history[-1].operation.kind, "rollback")
+        self.assertEqual(buffer.history[-1].operation.version, 1)
+
+    def test_rollback_rejects_unknown_version_without_mutation(self) -> None:
+        buffer = EditBuffer("a")
+
+        with self.assertRaises(InvalidOperationError):
+            buffer.rollback(99)
+
+        self.assertEqual(buffer.view(), "a")
+        self.assertEqual(buffer.version, 0)
 
 
 if __name__ == "__main__":

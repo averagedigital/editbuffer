@@ -31,6 +31,19 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(output.getvalue(), "hello there\n")
 
+    def test_rollback_command(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state = str(Path(directory) / "buffer.json")
+            main(["new", state, "--text", "a"])
+            main(["append", state, "b"])
+
+            self.assertEqual(main(["rollback", state, "0"]), 0)
+
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                main(["view", state])
+            self.assertEqual(output.getvalue(), "a\n")
+
 
 if __name__ == "__main__":
     unittest.main()

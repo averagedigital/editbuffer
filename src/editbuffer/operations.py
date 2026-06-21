@@ -12,6 +12,7 @@ OperationType = Literal[
     "insert_before",
     "insert_after",
     "delete",
+    "rollback",
 ]
 
 
@@ -20,6 +21,7 @@ class EditOperation:
     kind: OperationType
     target: Selection | None = None
     text: str = ""
+    version: int | None = None
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> EditOperation:
@@ -30,8 +32,15 @@ class EditOperation:
             "insert_before",
             "insert_after",
             "delete",
+            "rollback",
         }:
             raise InvalidOperationError(f"unknown operation: {kind!r}")
+
+        if kind == "rollback":
+            version = value.get("version")
+            if not isinstance(version, int):
+                raise InvalidOperationError("'rollback' requires integer 'version'")
+            return cls(kind, version=version)
 
         if kind != "delete" and "text" not in value:
             raise InvalidOperationError(f"{kind!r} requires 'text'")
@@ -46,3 +55,13 @@ class EditOperation:
         if not isinstance(target, Mapping):
             raise InvalidOperationError("'target' must be a selection object")
         return cls(kind, target=Selection.from_dict(target), text=text)
+
+    def as_dict(self) -> dict[str, Any]:
+        if self.kind == "rollback":
+            return {"op": "rollback", "version": self.version}
+        result: dict[str, Any] = {"op": self.kind}
+        if self.kind != "delete":
+            result["text"] = self.text
+        if self.target is not None:
+            result["target"] = self.target.as_dict()
+        return result

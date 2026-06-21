@@ -2,6 +2,7 @@ from .buffer import EditBuffer
 from .errors import (
     AmbiguousTargetError,
     EditBufferError,
+    FuzzyMatchError,
     InvalidOperationError,
     StaleVersionError,
     TargetNotFoundError,
@@ -19,6 +20,7 @@ __all__ = [
     "EditHistory",
     "EditOperation",
     "EditRecord",
+    "FuzzyMatchError",
     "InvalidOperationError",
     "Selection",
     "SelectionResolver",

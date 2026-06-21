@@ -34,6 +34,11 @@ def main(argv: list[str] | None = None) -> int:
             state["committed"] = True
             _save(state_path, state)
             print(result)
+        elif args.command == "rollback":
+            operation = {"op": "rollback", "version": args.version}
+            buffer.apply(operation)
+            state["operations"].append(operation)
+            _save(state_path, state)
         else:
             operation = _operation(args)
             buffer.apply(operation)
@@ -64,6 +69,10 @@ def _parser() -> argparse.ArgumentParser:
     apply = subparsers.add_parser("apply")
     apply.add_argument("state")
     apply.add_argument("operation", help="operation as JSON")
+
+    rollback = subparsers.add_parser("rollback")
+    rollback.add_argument("state")
+    rollback.add_argument("version", type=int)
 
     for name in ("view", "history", "commit"):
         command = subparsers.add_parser(name)

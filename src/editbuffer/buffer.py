@@ -24,6 +24,7 @@ class EditBuffer:
         self._committed = False
         self._validators = validators
         self._resolver = SelectionResolver()
+        self._snapshots = {0: content}
         self.history = EditHistory()
 
     @property
@@ -34,34 +35,49 @@ class EditBuffer:
     def committed(self) -> bool:
         return self._committed
 
+    @property
+    def versions(self) -> tuple[int, ...]:
+        return tuple(self._snapshots)
+
     def view(self) -> str:
         return self._content
 
-    def append(self, text: str) -> None:
-        self._apply(EditOperation("append", text=text))
+    def append(self, text: str) -> EditRecord:
+        return self._apply(EditOperation("append", text=text))
 
-    def replace(self, target: Selection | Mapping[str, Any], text: str) -> None:
-        self._apply(EditOperation("replace", self._selection(target), text))
+    def replace(
+        self,
+        target: Selection | Mapping[str, Any],
+        text: str,
+    ) -> EditRecord:
+        return self._apply(EditOperation("replace", self._selection(target), text))
 
     def insert_before(
         self,
         target: Selection | Mapping[str, Any],
         text: str,
-    ) -> None:
-        self._apply(EditOperation("insert_before", self._selection(target), text))
+    ) -> EditRecord:
+        return self._apply(
+            EditOperation("insert_before", self._selection(target), text)
+        )
 
     def insert_after(
         self,
         target: Selection | Mapping[str, Any],
         text: str,
-    ) -> None:
-        self._apply(EditOperation("insert_after", self._selection(target), text))
+    ) -> EditRecord:
+        return self._apply(
+            EditOperation("insert_after", self._selection(target), text)
+        )
 
-    def delete(self, target: Selection | Mapping[str, Any]) -> None:
-        self._apply(EditOperation("delete", self._selection(target)))
+    def delete(self, target: Selection | Mapping[str, Any]) -> EditRecord:
+        return self._apply(EditOperation("delete", self._selection(target)))
 
-    def apply(self, operation: Mapping[str, Any] | EditOperation) -> None:
-        self._apply(
+    def apply(
+        self,
+        operation: Mapping[str, Any] | EditOperation,
+    ) -> EditRecord:
+        return self._apply(
             operation
             if isinstance(operation, EditOperation)
             else EditOperation.from_dict(operation)
@@ -72,8 +88,13 @@ class EditBuffer:
         self._committed = True
         return self._content
 
-    def _apply(self, operation: EditOperation) -> None:
+    def rollback(self, version: int) -> EditRecord:
+        return self._apply(EditOperation("rollback", version=version))
+
+    def _apply(self, operation: EditOperation) -> EditRecord:
         self._ensure_open()
+        if operation.kind == "rollback":
+            return self._rollback(operation)
         resolved = self._resolve(operation)
         before = self._content[resolved.start : resolved.end]
         after = _replacement(operation, before)
@@ -88,17 +109,42 @@ class EditBuffer:
         version_before = self._version
         self._content = candidate
         self._version += 1
-        self.history.append(
-            EditRecord(
-                operation=operation,
-                start=resolved.start,
-                end=resolved.end,
-                before=before,
-                after=after,
-                version_before=version_before,
-                version_after=self._version,
-            )
+        self._snapshots[self._version] = candidate
+        record = EditRecord(
+            operation=operation,
+            start=resolved.start,
+            end=resolved.end,
+            before=before,
+            after=after,
+            version_before=version_before,
+            version_after=self._version,
+            confidence=resolved.confidence,
         )
+        self.history.append(record)
+        return record
+
+    def _rollback(self, operation: EditOperation) -> EditRecord:
+        if operation.version not in self._snapshots:
+            raise InvalidOperationError(f"unknown version: {operation.version}")
+        candidate = self._snapshots[operation.version]
+        for validator in self._validators:
+            validator(candidate)
+        before = self._content
+        version_before = self._version
+        self._content = candidate
+        self._version += 1
+        self._snapshots[self._version] = candidate
+        record = EditRecord(
+            operation=operation,
+            start=0,
+            end=len(before),
+            before=before,
+            after=candidate,
+            version_before=version_before,
+            version_after=self._version,
+        )
+        self.history.append(record)
+        return record
 
     def _resolve(self, operation: EditOperation) -> ResolvedSelection:
         if operation.kind == "append":

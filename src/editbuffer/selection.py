@@ -5,7 +5,7 @@ from typing import Any, Literal, Mapping
 
 from .errors import InvalidOperationError
 
-SelectionType = Literal["exact", "context", "range"]
+SelectionType = Literal["exact", "context", "range", "fuzzy", "block"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +18,9 @@ class Selection:
     end: int | None = None
     occurrence: int | None = None
     expected_version: int | None = None
+    threshold: float = 0.85
+    ambiguity_margin: float = 0.05
+    block_id: str | None = None
 
     @classmethod
     def exact(cls, text: str, occurrence: int | None = None) -> Selection:
@@ -56,6 +59,25 @@ class Selection:
         )
 
     @classmethod
+    def fuzzy(
+        cls,
+        text: str,
+        *,
+        threshold: float = 0.85,
+        ambiguity_margin: float = 0.05,
+    ) -> Selection:
+        return cls(
+            "fuzzy",
+            text=text,
+            threshold=threshold,
+            ambiguity_margin=ambiguity_margin,
+        )
+
+    @classmethod
+    def block(cls, block_id: str) -> Selection:
+        return cls("block", block_id=block_id)
+
+    @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> Selection:
         selection_type = value.get("type")
         if selection_type == "exact":
@@ -76,7 +98,49 @@ class Selection:
                 _required_int(value, "end"),
                 expected_version=_optional_int(value, "expected_version"),
             )
+        if selection_type == "fuzzy":
+            return cls.fuzzy(
+                _required_string(value, "text"),
+                threshold=_optional_float(value, "threshold", 0.85),
+                ambiguity_margin=_optional_float(
+                    value,
+                    "ambiguity_margin",
+                    0.05,
+                ),
+            )
+        if selection_type == "block":
+            return cls.block(_required_string(value, "block_id"))
         raise InvalidOperationError(f"unknown selection type: {selection_type!r}")
+
+    def as_dict(self) -> dict[str, Any]:
+        if self.type == "exact":
+            result: dict[str, Any] = {"type": "exact", "text": self.text}
+            if self.occurrence is not None:
+                result["occurrence"] = self.occurrence
+            return result
+        if self.type == "context":
+            result = {
+                "type": "context",
+                "before": self.before,
+                "text": self.text,
+                "after": self.after,
+            }
+            if self.occurrence is not None:
+                result["occurrence"] = self.occurrence
+            return result
+        if self.type == "range":
+            result = {"type": "range", "start": self.start, "end": self.end}
+            if self.expected_version is not None:
+                result["expected_version"] = self.expected_version
+            return result
+        if self.type == "fuzzy":
+            return {
+                "type": "fuzzy",
+                "text": self.text,
+                "threshold": self.threshold,
+                "ambiguity_margin": self.ambiguity_margin,
+            }
+        return {"type": "block", "block_id": self.block_id}
 
 
 def _required_string(value: Mapping[str, Any], key: str) -> str:
@@ -105,3 +169,14 @@ def _optional_int(value: Mapping[str, Any], key: str) -> int | None:
     if result is not None and not isinstance(result, int):
         raise InvalidOperationError(f"{key!r} must be an integer")
     return result
+
+
+def _optional_float(
+    value: Mapping[str, Any],
+    key: str,
+    default: float,
+) -> float:
+    result = value.get(key, default)
+    if not isinstance(result, (int, float)):
+        raise InvalidOperationError(f"{key!r} must be a number")
+    return float(result)
