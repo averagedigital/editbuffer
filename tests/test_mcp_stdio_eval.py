@@ -116,7 +116,8 @@ class McpStdioEvalTests(unittest.TestCase):
                         },
                     },
                 )
-                self.assertIn("selection did not match", error)
+                self.assertEqual(error["type"], "target_not_found")
+                self.assertIn("selection did not match", error["message"])
                 self.assertEqual(
                     await _call(session, "buffer_view", {"buffer_id": "missing"}),
                     before,
@@ -134,7 +135,8 @@ class McpStdioEvalTests(unittest.TestCase):
                         },
                     },
                 )
-                self.assertIn("selection matched 2 targets", error)
+                self.assertEqual(error["type"], "ambiguous_target")
+                self.assertEqual(error["candidates"], [[0, 1], [2, 3]])
 
                 await _call(
                     session,
@@ -162,7 +164,9 @@ class McpStdioEvalTests(unittest.TestCase):
                         },
                     },
                 )
-                self.assertIn("expected version 0", error)
+                self.assertEqual(error["type"], "stale_version")
+                self.assertEqual(error["current_version"], 1)
+                self.assertIn("expected version 0", error["message"])
                 self.assertEqual(
                     (await _call(session, "buffer_view", {"buffer_id": "stale"}))["content"],
                     "abcd",
@@ -193,71 +197,80 @@ class McpStdioEvalTests(unittest.TestCase):
                         },
                     },
                 )
-                self.assertIn("fuzzy selection ambiguous", error)
+                self.assertEqual(error["type"], "fuzzy_match")
+                self.assertEqual(error["reason"], "ambiguous")
+                self.assertGreaterEqual(len(error["candidates"]), 2)
 
                 await _call(
                     session,
                     "buffer_create",
                     {"buffer_id": "blocks", "content": "``` editbuffer:id=x\na\n```\n``` editbuffer:id=x\nb\n```"},
                 )
-                self.assertIn(
-                    "selection matched 2 targets",
-                    await _call_error(
-                        session,
-                        "buffer_edit",
-                        {
-                            "buffer_id": "blocks",
-                            "operation": {
-                                "op": "delete",
-                                "target": {"type": "block", "block_id": "x"},
+                self.assertEqual(
+                    (
+                        await _call_error(
+                            session,
+                            "buffer_edit",
+                            {
+                                "buffer_id": "blocks",
+                                "operation": {
+                                    "op": "delete",
+                                    "target": {"type": "block", "block_id": "x"},
+                                },
                             },
-                        },
-                    ),
+                        )
+                    )["type"],
+                    "ambiguous_target",
                 )
-                self.assertIn(
-                    "selection did not match",
-                    await _call_error(
-                        session,
-                        "buffer_edit",
-                        {
-                            "buffer_id": "blocks",
-                            "operation": {
-                                "op": "delete",
-                                "target": {"type": "block", "block_id": "missing"},
+                self.assertEqual(
+                    (
+                        await _call_error(
+                            session,
+                            "buffer_edit",
+                            {
+                                "buffer_id": "blocks",
+                                "operation": {
+                                    "op": "delete",
+                                    "target": {"type": "block", "block_id": "missing"},
+                                },
                             },
-                        },
-                    ),
+                        )
+                    )["type"],
+                    "target_not_found",
                 )
-                self.assertIn(
-                    "unknown operation",
-                    await _call_error(
-                        session,
-                        "buffer_edit",
-                        {"buffer_id": "blocks", "operation": {"op": "move"}},
-                    ),
+                self.assertEqual(
+                    (
+                        await _call_error(
+                            session,
+                            "buffer_edit",
+                            {"buffer_id": "blocks", "operation": {"op": "move"}},
+                        )
+                    )["type"],
+                    "invalid_operation",
                 )
-                self.assertIn(
-                    "unknown version",
-                    await _call_error(
-                        session,
-                        "buffer_rollback",
-                        {"buffer_id": "blocks", "version": 99},
-                    ),
+                self.assertEqual(
+                    (
+                        await _call_error(
+                            session,
+                            "buffer_rollback",
+                            {"buffer_id": "blocks", "version": 99},
+                        )
+                    )["type"],
+                    "invalid_operation",
                 )
 
                 await _call(session, "buffer_create", {"buffer_id": "commit", "content": "done"})
                 await _call(session, "buffer_commit", {"buffer_id": "commit"})
-                self.assertIn(
-                    "buffer is already committed",
-                    await _call_error(
-                        session,
-                        "buffer_edit",
-                        {
-                            "buffer_id": "commit",
-                            "operation": {"op": "append", "text": "!"},
-                        },
-                    ),
+                error = await _call_error(
+                    session,
+                    "buffer_edit",
+                    {
+                        "buffer_id": "commit",
+                        "operation": {"op": "append", "text": "!"},
+                    },
                 )
+                self.assertEqual(error["type"], "invalid_operation")
+                self.assertIn("buffer is already committed", error["message"])
 
         asyncio.run(run())
 
@@ -285,8 +298,15 @@ async def _call(session: Any, name: str, arguments: dict[str, Any]) -> dict[str,
     return structured
 
 
-async def _call_error(session: Any, name: str, arguments: dict[str, Any]) -> str:
+async def _call_error(session: Any, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     result = await session.call_tool(name, arguments)
-    if not result.isError:
-        raise AssertionError(f"{name} unexpectedly succeeded: {result.structuredContent}")
-    return " ".join(getattr(block, "text", "") for block in result.content)
+    if result.isError:
+        text = " ".join(getattr(block, "text", "") for block in result.content)
+        raise AssertionError(f"{name} returned unstructured MCP error: {text}")
+    structured = result.structuredContent
+    if not isinstance(structured, dict) or structured.get("ok") is not False:
+        raise AssertionError(f"{name} unexpectedly succeeded: {structured}")
+    error = structured.get("error")
+    if not isinstance(error, dict):
+        raise AssertionError(f"{name} did not return a structured error: {structured}")
+    return error
