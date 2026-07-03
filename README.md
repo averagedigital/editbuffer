@@ -196,6 +196,9 @@ codex mcp add editbuffer -- editbuffer-mcp
 Codex supports local STDIO MCP servers configured with `codex mcp add`; use
 `/mcp` in the Codex terminal UI to confirm the server is active.
 
+Claude Desktop and generic MCP client examples are in
+[`docs/mcp.md`](docs/mcp.md).
+
 The server exposes:
 
 - `buffer_create`
@@ -205,9 +208,16 @@ The server exposes:
 - `buffer_history`
 - `buffer_rollback`
 - `buffer_commit`
+- `command_history`
+- `command_select`
 
 Buffers are in-memory and live for the MCP server process. The MCP layer calls
 the same core API and does not implement separate edit semantics.
+
+`buffer_commit` remembers non-empty committed output as a reusable command.
+`command_history` returns the last 10 commands, newest first. `command_select`
+creates a new pending buffer from a previous command so the model can reuse it
+instead of regenerating it.
 
 ## Examples
 

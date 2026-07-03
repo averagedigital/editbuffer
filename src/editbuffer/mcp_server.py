@@ -11,6 +11,8 @@ from .history import EditRecord
 class BufferRegistry:
     def __init__(self) -> None:
         self._buffers: dict[str, EditBuffer] = {}
+        self._commands: list[dict[str, Any]] = []
+        self._next_command_number = 1
 
     def create(
         self,
@@ -53,7 +55,22 @@ class BufferRegistry:
     def commit(self, buffer_id: str) -> dict[str, Any]:
         buffer = self._get(buffer_id)
         buffer.commit()
+        self._remember_command(buffer.view())
         return self._state(buffer_id, buffer)
+
+    def command_history(self) -> list[dict[str, Any]]:
+        return list(self._commands)
+
+    def select_command(
+        self,
+        command_id: str,
+        *,
+        buffer_id: str | None = None,
+    ) -> dict[str, Any]:
+        for item in self._commands:
+            if item["command_id"] == command_id:
+                return self.create(item["command"], buffer_id=buffer_id)
+        raise KeyError(f"unknown command: {command_id}")
 
     def _get(self, buffer_id: str) -> EditBuffer:
         try:
@@ -69,6 +86,19 @@ class BufferRegistry:
             "versions": list(buffer.versions),
             "committed": buffer.committed,
         }
+
+    def _remember_command(self, command: str) -> None:
+        if not command.strip():
+            return
+        self._commands.insert(
+            0,
+            {
+                "command_id": f"cmd-{self._next_command_number}",
+                "command": command,
+            },
+        )
+        self._next_command_number += 1
+        del self._commands[10:]
 
 
 def _record(record: EditRecord) -> dict[str, Any]:
@@ -129,9 +159,10 @@ def create_server() -> Any:
     ) -> dict[str, Any]:
         """Apply one JSON edit operation.
 
+        Example replace operation:
+        {"op": "replace", "target": {"type": "exact", "text": "old"}, "text": "new"}
         Operations: append, replace, insert_before, insert_after, delete, rollback.
-        Targets: exact/context/range; fuzzy requires threshold and ambiguity_margin;
-        block requires an explicit block_id. Ambiguous edits fail without mutation.
+        Targets: exact/context/range/fuzzy/block. Ambiguous edits fail without mutation.
         """
         return registry.edit(buffer_id, operation)
 
@@ -147,8 +178,21 @@ def create_server() -> Any:
 
     @server.tool()
     def buffer_commit(buffer_id: str) -> dict[str, Any]:
-        """Commit final output and close the buffer to further edits."""
+        """Commit final output, close the buffer, and remember it as a reusable command."""
         return registry.commit(buffer_id)
+
+    @server.tool()
+    def command_history() -> list[dict[str, Any]]:
+        """Return up to 10 most recently committed commands, newest first."""
+        return registry.command_history()
+
+    @server.tool()
+    def command_select(
+        command_id: str,
+        buffer_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a new pending buffer from a previous command instead of regenerating it."""
+        return registry.select_command(command_id, buffer_id=buffer_id)
 
     return server
 
