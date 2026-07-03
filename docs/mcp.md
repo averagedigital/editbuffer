@@ -9,10 +9,10 @@ Install the MCP extra:
 pipx install 'editbuffer[mcp]'
 ```
 
-Until a PyPI release is available:
+Or run it with `uvx`:
 
 ```bash
-pipx install 'editbuffer[mcp] @ git+https://github.com/averagedigital/editbuffer.git'
+uvx --from 'editbuffer[mcp]' editbuffer-mcp
 ```
 
 ## Codex

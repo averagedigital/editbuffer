@@ -181,10 +181,10 @@ Install the optional server:
 pipx install 'editbuffer[mcp]'
 ```
 
-Until a PyPI release exists, install directly from GitHub:
+Or install with `uvx` without a persistent environment:
 
 ```bash
-pipx install 'editbuffer[mcp] @ git+https://github.com/averagedigital/editbuffer.git'
+uvx --from 'editbuffer[mcp]' editbuffer-mcp
 ```
 
 Connect it to Codex:
