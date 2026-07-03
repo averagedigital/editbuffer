@@ -189,6 +189,51 @@ def create_server() -> Any:
         )
 
     @server.tool()
+    def buffer_append(buffer_id: str, text: str) -> dict[str, Any]:
+        """Append text to a pending buffer."""
+        return _tool_result(
+            lambda: registry.edit(buffer_id, {"op": "append", "text": text}),
+            registry,
+            buffer_id=buffer_id,
+        )
+
+    @server.tool()
+    def buffer_replace(
+        buffer_id: str,
+        target: dict[str, Any],
+        text: str,
+    ) -> dict[str, Any]:
+        """Replace a selection with text. Target can be exact/context/range/fuzzy/block."""
+        return _selection_tool(registry, buffer_id, "replace", target, text)
+
+    @server.tool()
+    def buffer_insert_before(
+        buffer_id: str,
+        target: dict[str, Any],
+        text: str,
+    ) -> dict[str, Any]:
+        """Insert text before a selection. Target can be exact/context/range/fuzzy/block."""
+        return _selection_tool(registry, buffer_id, "insert_before", target, text)
+
+    @server.tool()
+    def buffer_insert_after(
+        buffer_id: str,
+        target: dict[str, Any],
+        text: str,
+    ) -> dict[str, Any]:
+        """Insert text after a selection. Target can be exact/context/range/fuzzy/block."""
+        return _selection_tool(registry, buffer_id, "insert_after", target, text)
+
+    @server.tool()
+    def buffer_delete(buffer_id: str, target: dict[str, Any]) -> dict[str, Any]:
+        """Delete a selection. Target can be exact/context/range/fuzzy/block."""
+        return _tool_result(
+            lambda: registry.edit(buffer_id, {"op": "delete", "target": target}),
+            registry,
+            buffer_id=buffer_id,
+        )
+
+    @server.tool()
     def buffer_history(buffer_id: str) -> list[dict[str, Any]]:
         """Return the audit trail for successful edits."""
         return _tool_result(
@@ -229,6 +274,20 @@ def create_server() -> Any:
         )
 
     return server
+
+
+def _selection_tool(
+    registry: BufferRegistry,
+    buffer_id: str,
+    op: str,
+    target: dict[str, Any],
+    text: str,
+) -> dict[str, Any]:
+    return _tool_result(
+        lambda: registry.edit(buffer_id, {"op": op, "target": target, "text": text}),
+        registry,
+        buffer_id=buffer_id,
+    )
 
 
 def _tool_result(

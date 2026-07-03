@@ -202,9 +202,14 @@ Claude Desktop and generic MCP client examples are in
 The server exposes:
 
 - `buffer_create`
+- `buffer_append`
 - `buffer_list`
 - `buffer_view`
 - `buffer_edit`
+- `buffer_replace`
+- `buffer_insert_before`
+- `buffer_insert_after`
+- `buffer_delete`
 - `buffer_history`
 - `buffer_rollback`
 - `buffer_commit`
@@ -213,6 +218,18 @@ The server exposes:
 
 Buffers are in-memory and live for the MCP server process. The MCP layer calls
 the same core API and does not implement separate edit semantics.
+
+Use the first-class selection tools for normal agent use:
+
+```json
+{
+  "buffer_id": "answer",
+  "target": {"type": "exact", "text": "old"},
+  "text": "new"
+}
+```
+
+`buffer_edit` remains available for raw JSON operations.
 
 `buffer_commit` remembers non-empty committed output as a reusable command.
 `command_history` returns the last 10 commands, newest first. `command_select`

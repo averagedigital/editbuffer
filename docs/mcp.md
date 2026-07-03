@@ -50,9 +50,14 @@ Use STDIO transport with command `editbuffer-mcp` and no arguments.
 The server exposes these tools:
 
 - `buffer_create`
+- `buffer_append`
 - `buffer_list`
 - `buffer_view`
 - `buffer_edit`
+- `buffer_replace`
+- `buffer_insert_before`
+- `buffer_insert_after`
+- `buffer_delete`
 - `buffer_history`
 - `buffer_rollback`
 - `buffer_commit`
@@ -73,6 +78,15 @@ Use `buffer_edit` with JSON operations such as:
   "text": "new_value"
 }
 ```
+
+For normal agent use, prefer the explicit selection tools:
+
+- `buffer_replace`
+- `buffer_insert_before`
+- `buffer_insert_after`
+- `buffer_delete`
+
+They take `buffer_id`, `target`, and, except delete, `text`.
 
 Errors are intentional recovery signals. Missing, ambiguous, stale, invalid, or
 unsafe fuzzy selections fail without mutating the buffer.

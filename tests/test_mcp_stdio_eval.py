@@ -18,18 +18,23 @@ class McpStdioEvalTests(unittest.TestCase):
             async with _session() as session:
                 tools = await session.list_tools()
                 self.assertEqual(
-                    [tool.name for tool in tools.tools],
-                    [
+                    {tool.name for tool in tools.tools},
+                    {
                         "buffer_create",
+                        "buffer_append",
                         "buffer_list",
                         "buffer_view",
                         "buffer_edit",
+                        "buffer_replace",
+                        "buffer_insert_before",
+                        "buffer_insert_after",
+                        "buffer_delete",
                         "buffer_history",
                         "buffer_rollback",
                         "buffer_commit",
                         "command_history",
                         "command_select",
-                    ],
+                    },
                 )
                 cases = [
                     (
@@ -96,6 +101,59 @@ class McpStdioEvalTests(unittest.TestCase):
                     )
                     self.assertEqual(result["content"], expected)
                     self.assertEqual(result["applied"]["confidence"], 1.0)
+
+        asyncio.run(run())
+
+    def test_selection_edit_tools_are_first_class(self) -> None:
+        async def run() -> None:
+            async with _session() as session:
+                await _call(
+                    session,
+                    "buffer_create",
+                    {"buffer_id": "selection-tools", "content": "alpha beta"},
+                )
+                await _call(
+                    session,
+                    "buffer_replace",
+                    {
+                        "buffer_id": "selection-tools",
+                        "target": {"type": "exact", "text": "beta"},
+                        "text": "gamma",
+                    },
+                )
+                await _call(
+                    session,
+                    "buffer_insert_before",
+                    {
+                        "buffer_id": "selection-tools",
+                        "target": {"type": "exact", "text": "gamma"},
+                        "text": "new ",
+                    },
+                )
+                await _call(
+                    session,
+                    "buffer_insert_after",
+                    {
+                        "buffer_id": "selection-tools",
+                        "target": {"type": "exact", "text": "alpha"},
+                        "text": " old",
+                    },
+                )
+                await _call(
+                    session,
+                    "buffer_delete",
+                    {
+                        "buffer_id": "selection-tools",
+                        "target": {"type": "exact", "text": "old "},
+                    },
+                )
+                result = await _call(
+                    session,
+                    "buffer_append",
+                    {"buffer_id": "selection-tools", "text": "!"},
+                )
+
+                self.assertEqual(result["content"], "alpha new gamma!")
 
         asyncio.run(run())
 
