@@ -42,7 +42,7 @@ class EditHistory:
         return iter(self._records)
 
 
-SECRET_KEYS = ("api_key", "token", "secret", "password", "authorization")
+SECRET_KEYS = ("api_key", "token", "secret", "password", "authorization", "cookie")
 
 
 class ToolHistoryStore:
@@ -77,6 +77,7 @@ class ToolHistoryStore:
         result: Any = None,
         status: str = "success",
         error: str | None = None,
+        result_summary: str | None = None,
         content: str | None = None,
         command: str | None = None,
         timestamp: datetime | None = None,
@@ -100,7 +101,7 @@ class ToolHistoryStore:
                     tool_name,
                     _json_dump(redacted_arguments),
                     _json_dump(redacted_result),
-                    _summary(redacted_result),
+                    result_summary or _summary(redacted_result),
                     status,
                     error,
                     content,
@@ -108,6 +109,23 @@ class ToolHistoryStore:
                 ),
             )
         return identifier
+
+    def last_failed(self) -> dict[str, Any]:
+        self.cleanup()
+        with self._connect() as db:
+            row = db.execute(
+                """
+                SELECT call_id, timestamp, tool_name, arguments_json, result_json,
+                       result_summary, status, error, content, command
+                FROM tool_calls
+                WHERE status = 'failed'
+                ORDER BY timestamp DESC, rowid DESC
+                LIMIT 1
+                """
+            ).fetchone()
+        if row is None:
+            raise KeyError("no failed tool call")
+        return _row(row)
 
     def list_tool_calls(self, limit: int | None = None) -> list[dict[str, Any]]:
         self.cleanup()
@@ -246,6 +264,7 @@ def _summary(value: Any) -> str | None:
 def _row(row: tuple[Any, ...]) -> dict[str, Any]:
     return {
         "call_id": row[0],
+        "created_at": row[1],
         "timestamp": row[1],
         "tool_name": row[2],
         "arguments": _json_load(row[3]),

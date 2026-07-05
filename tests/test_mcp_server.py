@@ -102,16 +102,40 @@ class BufferRegistryTests(unittest.TestCase):
             store = ToolHistoryStore(db_path)
             call_id = store.record_tool_call(
                 "buffer_create",
-                {"content": "x", "api_key": "sk-secret", "nested": {"token": "abc"}},
+                {
+                    "content": "x",
+                    "api_key": "sk-secret",
+                    "cookie": "session",
+                    "nested": {"token": "abc"},
+                },
                 result={"buffer_id": "x", "content": "x"},
             )
 
             persisted = ToolHistoryStore(db_path).list_tool_calls()
 
             self.assertEqual(persisted[0]["call_id"], call_id)
+            self.assertIn("created_at", persisted[0])
             self.assertEqual(persisted[0]["arguments"]["api_key"], "[REDACTED]")
+            self.assertEqual(persisted[0]["arguments"]["cookie"], "[REDACTED]")
             self.assertEqual(persisted[0]["arguments"]["nested"]["token"], "[REDACTED]")
             self.assertEqual(persisted[0]["status"], "success")
+
+    def test_failed_call_becomes_last_failed(self) -> None:
+        with TemporaryDirectory() as tmp:
+            store = ToolHistoryStore(Path(tmp) / "history.sqlite3")
+            store.record_tool_call("shell", {"command": "ok"}, status="success")
+            failed_id = store.record_tool_call(
+                "shell",
+                {"command": "pytest bad"},
+                status="failed",
+                error="exit 1",
+            )
+
+            failed = store.last_failed()
+
+            self.assertEqual(failed["call_id"], failed_id)
+            self.assertEqual(failed["status"], "failed")
+            self.assertEqual(failed["error"], "exit 1")
 
     def test_tool_history_retention_and_limit(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -142,12 +166,68 @@ class BufferRegistryTests(unittest.TestCase):
             self.assertEqual(selected["content"], "pytest tests/test_mcp_server.py")
             self.assertEqual(selected["buffer_id"], "repair")
 
+    def test_select_last_failed_uses_sqlite_history(self) -> None:
+        with TemporaryDirectory() as tmp:
+            registry = BufferRegistry(history_store=ToolHistoryStore(Path(tmp) / "history.sqlite3"))
+            registry.record_tool_call(
+                "shell",
+                {"command": "pytest tests/test_mcp_server.py --bad"},
+                status="failed",
+                error="exit 1",
+            )
+
+            selected = registry.select_last_failed(buffer_id="repair")
+
+            self.assertEqual(selected["content"], "pytest tests/test_mcp_server.py --bad")
+            self.assertEqual(selected["buffer_id"], "repair")
+
+    def test_edit_last_failed_creates_repaired_buffer(self) -> None:
+        with TemporaryDirectory() as tmp:
+            registry = BufferRegistry(history_store=ToolHistoryStore(Path(tmp) / "history.sqlite3"))
+            registry.record_tool_call(
+                "shell",
+                {"command": "pytest tests/test_mcp_server.py --bad"},
+                status="failed",
+                error="exit 1",
+            )
+
+            edited = registry.edit_last_failed(
+                {"type": "exact", "text": " --bad"},
+                "",
+                buffer_id="repair",
+            )
+
+            self.assertEqual(edited["content"], "pytest tests/test_mcp_server.py")
+            self.assertEqual(edited["buffer_id"], "repair")
+
+    def test_non_textual_last_failed_returns_explicit_error(self) -> None:
+        with TemporaryDirectory() as tmp:
+            registry = BufferRegistry(history_store=ToolHistoryStore(Path(tmp) / "history.sqlite3"))
+            registry.record_tool_call(
+                "json_tool",
+                {"payload": {"x": 1}},
+                status="failed",
+                error="bad payload",
+            )
+
+            with self.assertRaises(KeyError) as error:
+                registry.select_last_failed()
+
+            self.assertIn("tool call has no selectable content", str(error.exception))
+
     def test_missing_tool_call_selection_fails_explicitly(self) -> None:
         with TemporaryDirectory() as tmp:
             registry = BufferRegistry(history_store=ToolHistoryStore(Path(tmp) / "history.sqlite3"))
 
             with self.assertRaises(KeyError):
                 registry.select_tool_call("missing")
+
+    def test_missing_last_failed_fails_explicitly(self) -> None:
+        with TemporaryDirectory() as tmp:
+            registry = BufferRegistry(history_store=ToolHistoryStore(Path(tmp) / "history.sqlite3"))
+
+            with self.assertRaises(KeyError):
+                registry.select_last_failed()
 
 
 if __name__ == "__main__":

@@ -39,6 +39,9 @@ class McpStdioEvalTests(unittest.TestCase):
                             "buffer_commit",
                             "tool_history",
                             "tool_select",
+                            "last_failed",
+                            "select_last_failed",
+                            "edit_last_failed",
                         },
                     )
                     cases = [

@@ -94,6 +94,7 @@ class BufferRegistry:
         result: Any = None,
         status: str = "success",
         error: str | None = None,
+        result_summary: str | None = None,
     ) -> str:
         return self._history_store.record_tool_call(
             tool_name,
@@ -101,9 +102,13 @@ class BufferRegistry:
             result=result,
             status=status,
             error=error,
+            result_summary=result_summary,
             content=_content_from(tool_name, arguments or {}, result),
             command=(arguments or {}).get("command"),
         )
+
+    def last_failed(self) -> dict[str, Any]:
+        return self._history_store.last_failed()
 
     def select_tool_call(
         self,
@@ -112,10 +117,28 @@ class BufferRegistry:
         buffer_id: str | None = None,
     ) -> dict[str, Any]:
         item = self._history_store.get_tool_call(call_id)
-        content = item.get("command") or item.get("content")
-        if not isinstance(content, str) or not content:
-            raise KeyError(f"tool call has no selectable content: {call_id}")
+        content = _selectable_content(item)
         return self.create(content, buffer_id=buffer_id)
+
+    def select_last_failed(self, *, buffer_id: str | None = None) -> dict[str, Any]:
+        item = self._history_store.last_failed()
+        content = _selectable_content(item)
+        return self.create(content, buffer_id=buffer_id)
+
+    def edit_last_failed(
+        self,
+        target: dict[str, Any],
+        text: str,
+        *,
+        buffer_id: str | None = None,
+    ) -> dict[str, Any]:
+        selected = self.select_last_failed(buffer_id=buffer_id)
+        result = self.edit(
+            selected["buffer_id"],
+            {"op": "replace", "target": target, "text": text},
+        )
+        result["source_call_id"] = self._history_store.last_failed()["call_id"]
+        return result
 
     def _get(self, buffer_id: str) -> EditBuffer:
         try:
@@ -180,9 +203,11 @@ def create_server() -> Any:
         "editbuffer",
         instructions=(
             "Use editbuffer for pending output that may need local corrections before "
-            "commit. Create one buffer, apply small selection-based edits, view when "
-            "needed, and commit only when final. Never retry ambiguous fuzzy edits "
-            "without narrowing the selection."
+            "commit. Use select_last_failed or tool_select to start from a recorded "
+            "call. After a recorded call fails, prefer edit_last_failed or "
+            "select_last_failed before retrying. Apply small selection-based edits, "
+            "view when needed, and commit only when final. Never retry ambiguous "
+            "fuzzy edits without narrowing the selection."
         ),
         json_response=True,
     )
@@ -328,6 +353,42 @@ def create_server() -> Any:
             buffer_id=buffer_id,
         )
 
+    @server.tool()
+    def last_failed() -> dict[str, Any]:
+        """Return the most recent failed recorded tool call."""
+        return _tool_result(
+            registry.last_failed,
+            registry,
+            tool_name="last_failed",
+            arguments={},
+        )
+
+    @server.tool()
+    def select_last_failed(buffer_id: str | None = None) -> dict[str, Any]:
+        """After a failure, create a pending buffer from the failed recorded call."""
+        return _tool_result(
+            lambda: registry.select_last_failed(buffer_id=buffer_id),
+            registry,
+            tool_name="select_last_failed",
+            arguments={"buffer_id": buffer_id},
+            buffer_id=buffer_id,
+        )
+
+    @server.tool()
+    def edit_last_failed(
+        target: dict[str, Any],
+        text: str,
+        buffer_id: str | None = None,
+    ) -> dict[str, Any]:
+        """After a failure, repair the failed recorded call with one selection edit."""
+        return _tool_result(
+            lambda: registry.edit_last_failed(target, text, buffer_id=buffer_id),
+            registry,
+            tool_name="edit_last_failed",
+            arguments={"target": target, "text": text, "buffer_id": buffer_id},
+            buffer_id=buffer_id,
+        )
+
     return server
 
 
@@ -391,6 +452,14 @@ def _content_from(tool_name: str, arguments: dict[str, Any], result: Any) -> str
     return None
 
 
+def _selectable_content(item: dict[str, Any]) -> str:
+    for key in ("command", "content"):
+        value = item.get(key)
+        if isinstance(value, str) and value:
+            return value
+    raise KeyError(f"tool call has no selectable content: {item['call_id']}")
+
+
 def _structured_error(
     error: Exception,
     *,
@@ -429,8 +498,10 @@ def _error_type(error: Exception) -> str:
             return "unknown_command"
         if message.startswith("unknown tool call:"):
             return "unknown_tool_call"
+        if message.startswith("no failed tool call"):
+            return "no_failed_tool_call"
         if message.startswith("tool call has no selectable content:"):
-            return "unselectable_tool_call"
+            return "unsupported_edit_target"
         return "not_found"
     if isinstance(error, ValueError):
         message = _message(error)

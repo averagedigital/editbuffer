@@ -214,6 +214,9 @@ The server exposes:
 - `buffer_commit`
 - `tool_history`
 - `tool_select`
+- `last_failed`
+- `select_last_failed`
+- `edit_last_failed`
 
 Buffers are in-memory and live for the MCP server process. The MCP layer calls
 the same core API and does not implement separate edit semantics.
@@ -231,9 +234,10 @@ Use the first-class selection tools for normal agent use:
 `buffer_edit` remains available for raw JSON operations.
 
 MCP calls are recorded in SQLite-backed history. `tool_history` returns recent
-calls, newest first. `tool_select` creates a pending buffer from selectable
-content in a previous call so the model can repair it instead of regenerating
-it.
+calls, newest first. `last_failed`, `select_last_failed`, and `edit_last_failed`
+let the model repair the latest failed recorded call without first asking for
+history. `tool_select` creates a pending buffer from selectable content in any
+previous call.
 
 ## Examples
 

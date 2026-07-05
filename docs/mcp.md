@@ -62,6 +62,9 @@ The server exposes these tools:
 - `buffer_commit`
 - `tool_history`
 - `tool_select`
+- `last_failed`
+- `select_last_failed`
+- `edit_last_failed`
 
 Use `buffer_edit` with JSON operations such as:
 
@@ -103,8 +106,9 @@ Editbuffer MCP calls are recorded in SQLite-backed history:
 ```
 
 Use `tool_select` with a `call_id` to create a new pending buffer from selectable
-content in an old call instead of generating it again. By default
-`tool_history` returns the last 10 calls, newest first.
+content in an old call instead of generating it again. Use `select_last_failed`
+or `edit_last_failed` to repair the most recent failed recorded call directly.
+By default `tool_history` returns the last 10 calls, newest first.
 
 ## Limits
 
