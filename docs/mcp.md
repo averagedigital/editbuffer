@@ -49,7 +49,6 @@ Use STDIO transport with command `editbuffer-mcp` and no arguments.
 
 The server exposes these tools:
 
-- `buffer_create`
 - `buffer_append`
 - `buffer_list`
 - `buffer_view`
@@ -61,8 +60,8 @@ The server exposes these tools:
 - `buffer_history`
 - `buffer_rollback`
 - `buffer_commit`
-- `command_history`
-- `command_select`
+- `tool_history`
+- `tool_select`
 
 Use `buffer_edit` with JSON operations such as:
 
@@ -91,20 +90,21 @@ They take `buffer_id`, `target`, and, except delete, `text`.
 Errors are intentional recovery signals. Missing, ambiguous, stale, invalid, or
 unsafe fuzzy selections fail without mutating the buffer.
 
-Committed non-empty buffers are remembered as recent commands:
+Editbuffer MCP calls are recorded in SQLite-backed history:
 
 ```json
 [
   {
-    "command_id": "cmd-3",
-    "command": "pytest tests/test_mcp_server.py"
+    "call_id": "call-...",
+    "tool_name": "buffer_edit",
+    "status": "success"
   }
 ]
 ```
 
-Use `command_select` with a `command_id` to create a new pending buffer from an
-old command instead of generating it again. Only the last 10 commands are kept,
-newest first.
+Use `tool_select` with a `call_id` to create a new pending buffer from selectable
+content in an old call instead of generating it again. By default
+`tool_history` returns the last 10 calls, newest first.
 
 ## Limits
 

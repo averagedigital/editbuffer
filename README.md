@@ -201,7 +201,6 @@ Claude Desktop and generic MCP client examples are in
 
 The server exposes:
 
-- `buffer_create`
 - `buffer_append`
 - `buffer_list`
 - `buffer_view`
@@ -213,8 +212,8 @@ The server exposes:
 - `buffer_history`
 - `buffer_rollback`
 - `buffer_commit`
-- `command_history`
-- `command_select`
+- `tool_history`
+- `tool_select`
 
 Buffers are in-memory and live for the MCP server process. The MCP layer calls
 the same core API and does not implement separate edit semantics.
@@ -231,10 +230,10 @@ Use the first-class selection tools for normal agent use:
 
 `buffer_edit` remains available for raw JSON operations.
 
-`buffer_commit` remembers non-empty committed output as a reusable command.
-`command_history` returns the last 10 commands, newest first. `command_select`
-creates a new pending buffer from a previous command so the model can reuse it
-instead of regenerating it.
+MCP calls are recorded in SQLite-backed history. `tool_history` returns recent
+calls, newest first. `tool_select` creates a pending buffer from selectable
+content in a previous call so the model can repair it instead of regenerating
+it.
 
 ## Examples
 

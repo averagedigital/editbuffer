@@ -13,14 +13,14 @@ from .errors import (
     StaleVersionError,
     TargetNotFoundError,
 )
-from .history import EditRecord
+from .history import EditRecord, ToolHistoryStore
 
 
 class BufferRegistry:
-    def __init__(self) -> None:
+    def __init__(self, history_store: ToolHistoryStore | None = None) -> None:
         self._buffers: dict[str, EditBuffer] = {}
-        self._commands: list[dict[str, Any]] = []
-        self._next_command_number = 1
+        self._history_store = history_store or ToolHistoryStore()
+        self._next_command_number = self._initial_command_number()
 
     def create(
         self,
@@ -67,7 +67,7 @@ class BufferRegistry:
         return self._state(buffer_id, buffer)
 
     def command_history(self) -> list[dict[str, Any]]:
-        return list(self._commands)
+        return self._history_store.command_history()
 
     def current_version(self, buffer_id: str | None) -> int | None:
         if buffer_id is None:
@@ -81,10 +81,41 @@ class BufferRegistry:
         *,
         buffer_id: str | None = None,
     ) -> dict[str, Any]:
-        for item in self._commands:
-            if item["command_id"] == command_id:
-                return self.create(item["command"], buffer_id=buffer_id)
-        raise KeyError(f"unknown command: {command_id}")
+        return self.create(self._history_store.get_command(command_id), buffer_id=buffer_id)
+
+    def tool_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+        return self._history_store.list_tool_calls(limit)
+
+    def record_tool_call(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any] | None = None,
+        *,
+        result: Any = None,
+        status: str = "success",
+        error: str | None = None,
+    ) -> str:
+        return self._history_store.record_tool_call(
+            tool_name,
+            arguments,
+            result=result,
+            status=status,
+            error=error,
+            content=_content_from(tool_name, arguments or {}, result),
+            command=(arguments or {}).get("command"),
+        )
+
+    def select_tool_call(
+        self,
+        call_id: str,
+        *,
+        buffer_id: str | None = None,
+    ) -> dict[str, Any]:
+        item = self._history_store.get_tool_call(call_id)
+        content = item.get("command") or item.get("content")
+        if not isinstance(content, str) or not content:
+            raise KeyError(f"tool call has no selectable content: {call_id}")
+        return self.create(content, buffer_id=buffer_id)
 
     def _get(self, buffer_id: str) -> EditBuffer:
         try:
@@ -104,15 +135,23 @@ class BufferRegistry:
     def _remember_command(self, command: str) -> None:
         if not command.strip():
             return
-        self._commands.insert(
-            0,
-            {
-                "command_id": f"cmd-{self._next_command_number}",
-                "command": command,
-            },
+        self._history_store.record_tool_call(
+            "command",
+            {"command": command},
+            call_id=f"cmd-{self._next_command_number}",
+            result={"command": command},
+            content=command,
+            command=command,
         )
         self._next_command_number += 1
-        del self._commands[10:]
+
+    def _initial_command_number(self) -> int:
+        numbers: list[int] = []
+        for item in self._history_store.command_history(limit=1000):
+            command_id = item["command_id"]
+            if command_id.startswith("cmd-") and command_id[4:].isdigit():
+                numbers.append(int(command_id[4:]))
+        return max(numbers, default=0) + 1
 
 
 def _record(record: EditRecord) -> dict[str, Any]:
@@ -149,26 +188,22 @@ def create_server() -> Any:
     )
 
     @server.tool()
-    def buffer_create(
-        content: str = "",
-        buffer_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Create an in-memory pending output buffer."""
-        return _tool_result(
-            lambda: registry.create(content, buffer_id=buffer_id),
-            registry,
-            buffer_id=buffer_id,
-        )
-
-    @server.tool()
     def buffer_list() -> list[dict[str, Any]]:
         """List active pending output buffers."""
-        return registry.list_buffers()
+        result = registry.list_buffers()
+        registry.record_tool_call("buffer_list", {}, result=result)
+        return result
 
     @server.tool()
     def buffer_view(buffer_id: str) -> dict[str, Any]:
         """View current content, version, snapshots, and commit state."""
-        return _tool_result(lambda: registry.view(buffer_id), registry, buffer_id=buffer_id)
+        return _tool_result(
+            lambda: registry.view(buffer_id),
+            registry,
+            tool_name="buffer_view",
+            arguments={"buffer_id": buffer_id},
+            buffer_id=buffer_id,
+        )
 
     @server.tool()
     def buffer_edit(
@@ -185,6 +220,8 @@ def create_server() -> Any:
         return _tool_result(
             lambda: registry.edit(buffer_id, operation),
             registry,
+            tool_name="buffer_edit",
+            arguments={"buffer_id": buffer_id, "operation": operation},
             buffer_id=buffer_id,
         )
 
@@ -194,6 +231,8 @@ def create_server() -> Any:
         return _tool_result(
             lambda: registry.edit(buffer_id, {"op": "append", "text": text}),
             registry,
+            tool_name="buffer_append",
+            arguments={"buffer_id": buffer_id, "text": text},
             buffer_id=buffer_id,
         )
 
@@ -230,6 +269,8 @@ def create_server() -> Any:
         return _tool_result(
             lambda: registry.edit(buffer_id, {"op": "delete", "target": target}),
             registry,
+            tool_name="buffer_delete",
+            arguments={"buffer_id": buffer_id, "target": target},
             buffer_id=buffer_id,
         )
 
@@ -239,6 +280,8 @@ def create_server() -> Any:
         return _tool_result(
             lambda: registry.history(buffer_id),
             registry,
+            tool_name="buffer_history",
+            arguments={"buffer_id": buffer_id},
             buffer_id=buffer_id,
         )
 
@@ -248,28 +291,40 @@ def create_server() -> Any:
         return _tool_result(
             lambda: registry.rollback(buffer_id, version),
             registry,
+            tool_name="buffer_rollback",
+            arguments={"buffer_id": buffer_id, "version": version},
             buffer_id=buffer_id,
         )
 
     @server.tool()
     def buffer_commit(buffer_id: str) -> dict[str, Any]:
         """Commit final output, close the buffer, and remember it as a reusable command."""
-        return _tool_result(lambda: registry.commit(buffer_id), registry, buffer_id=buffer_id)
+        return _tool_result(
+            lambda: registry.commit(buffer_id),
+            registry,
+            tool_name="buffer_commit",
+            arguments={"buffer_id": buffer_id},
+            buffer_id=buffer_id,
+        )
 
     @server.tool()
-    def command_history() -> list[dict[str, Any]]:
-        """Return up to 10 most recently committed commands, newest first."""
-        return registry.command_history()
+    def tool_history(limit: int = 10) -> list[dict[str, Any]]:
+        """Return recent SQLite-backed tool calls, newest first."""
+        result = registry.tool_history(limit)
+        registry.record_tool_call("tool_history", {"limit": limit}, result=result)
+        return result
 
     @server.tool()
-    def command_select(
-        command_id: str,
+    def tool_select(
+        call_id: str,
         buffer_id: str | None = None,
     ) -> dict[str, Any]:
-        """Create a new pending buffer from a previous command instead of regenerating it."""
+        """Create a pending buffer from selectable content in a previous tool call."""
         return _tool_result(
-            lambda: registry.select_command(command_id, buffer_id=buffer_id),
+            lambda: registry.select_tool_call(call_id, buffer_id=buffer_id),
             registry,
+            tool_name="tool_select",
+            arguments={"call_id": call_id, "buffer_id": buffer_id},
             buffer_id=buffer_id,
         )
 
@@ -286,6 +341,8 @@ def _selection_tool(
     return _tool_result(
         lambda: registry.edit(buffer_id, {"op": op, "target": target, "text": text}),
         registry,
+        tool_name=f"buffer_{op}",
+        arguments={"buffer_id": buffer_id, "target": target, "text": text},
         buffer_id=buffer_id,
     )
 
@@ -294,18 +351,44 @@ def _tool_result(
     call: Any,
     registry: BufferRegistry,
     *,
+    tool_name: str | None = None,
+    arguments: dict[str, Any] | None = None,
     buffer_id: str | None = None,
 ) -> Any:
     try:
-        return call()
+        result = call()
+        if tool_name is not None:
+            registry.record_tool_call(tool_name, arguments or {}, result=result)
+        return result
     except (EditBufferError, KeyError, ValueError) as error:
-        return {
+        result = {
             "ok": False,
             "error": _structured_error(
                 error,
                 current_version=registry.current_version(buffer_id),
             ),
         }
+        if tool_name is not None:
+            registry.record_tool_call(
+                tool_name,
+                arguments or {},
+                result=result,
+                status="failed",
+                error=_message(error),
+            )
+        return result
+
+
+def _content_from(tool_name: str, arguments: dict[str, Any], result: Any) -> str | None:
+    for key in ("command", "content", "text"):
+        value = arguments.get(key)
+        if isinstance(value, str) and value:
+            return value
+    if isinstance(result, dict):
+        value = result.get("content")
+        if isinstance(value, str) and tool_name in {"buffer_create", "buffer_view"}:
+            return value
+    return None
 
 
 def _structured_error(
@@ -344,6 +427,10 @@ def _error_type(error: Exception) -> str:
             return "unknown_buffer"
         if message.startswith("unknown command:"):
             return "unknown_command"
+        if message.startswith("unknown tool call:"):
+            return "unknown_tool_call"
+        if message.startswith("tool call has no selectable content:"):
+            return "unselectable_tool_call"
         return "not_found"
     if isinstance(error, ValueError):
         message = _message(error)
