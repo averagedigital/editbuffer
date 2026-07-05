@@ -1,0 +1,5 @@
+../tasks/heredoc_python_report
+../tasks/json_escape_config
+../tasks/regex_log_pipeline
+../tasks/argparse_transformer
+../tasks/makefile_quote_rules

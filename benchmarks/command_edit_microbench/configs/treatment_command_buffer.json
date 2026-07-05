@@ -1,0 +1,22 @@
+{
+  "condition": "treatment_command_buffer",
+  "task_paths_file": "../task_paths.txt",
+  "agent": "goose",
+  "model": "openai/gpt://b1g8u4n2m20c0dqtqagj/deepseek-v4-flash/latest",
+  "n_attempts": 3,
+  "n_concurrent": 1,
+  "timeout_multiplier": 1.0,
+  "internet_allowed": true,
+  "env_file": ".env",
+  "required_env": ["YANDEX_API_KEY", "YANDEX_FOLDER_ID", "OPENAI_API_KEY"],
+  "output_dir": "results/command_edit_microbench/treatment_command_buffer",
+  "mcp_config": "../../terminal_bench/configs/editbuffer.mcp.json",
+  "extra_instruction_paths": ["../treatment_tool_policy.md"],
+  "agent_env": {
+    "EDITBUFFER_MCP_ENABLED": "1",
+    "EDITBUFFER_MCP_COMMAND": "editbuffer-mcp",
+    "OPENAI_HOST": "https://ai.api.cloud.yandex.net",
+    "OPENAI_BASE_PATH": "v1/chat/completions"
+  },
+  "agent_kwargs": {}
+}
