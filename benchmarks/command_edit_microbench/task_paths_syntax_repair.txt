@@ -1,0 +1,3 @@
+../tasks/syntax_quote_report
+../tasks/syntax_heredoc_json
+../tasks/syntax_subshell_archive

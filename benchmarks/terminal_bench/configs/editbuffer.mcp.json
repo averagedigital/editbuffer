@@ -4,7 +4,7 @@
       "command": "sh",
       "args": [
         "-lc",
-        "if ! command -v uvx >/dev/null 2>&1; then curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null; export PATH=\"$HOME/.local/bin:$PATH\"; fi; exec uvx --from 'editbuffer[mcp]==0.2.2' editbuffer-mcp"
+        "if ! command -v uvx >/dev/null 2>&1; then curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null; export PATH=\"$HOME/.local/bin:$PATH\"; fi; exec uvx --from 'editbuffer[mcp] @ git+https://github.com/averagedigital/editbuffer.git@ec2a7b696f831f086ddea6d701286afc5403a5de' editbuffer-mcp"
       ]
     }
   }

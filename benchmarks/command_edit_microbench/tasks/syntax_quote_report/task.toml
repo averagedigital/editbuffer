@@ -1,0 +1,26 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "local/syntax-quote-report"
+description = "Repair one large shell command with a quote syntax error."
+keywords = ["command-repair", "syntax", "shell", "quote"]
+[[task.authors]]
+name = "averagedigital"
+
+[verifier]
+timeout_sec = 120.0
+
+[agent]
+timeout_sec = 300.0
+
+[environment]
+network_mode = "public"
+os = "linux"
+build_timeout_sec = 120.0
+cpus = 1
+memory_mb = 1024
+storage_mb = 2048
+gpus = 0
+allow_internet = true
+mcp_servers = []

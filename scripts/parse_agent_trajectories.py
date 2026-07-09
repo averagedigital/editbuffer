@@ -17,8 +17,10 @@ SHELL_COMMAND_RE = re.compile(r"^\s*(?:[$#]\s+|CMD:\s*|COMMAND:\s*)(.+?)\s*$", r
 REPAIR_TOOLS = {
     "command_history",
     "repair_command",
+    "repair_failed_command",
     "command_repeat",
 }
+COMMAND_REPAIR_TOOLS = {"repair_command", "repair_failed_command"}
 USAGE_KEYS = ("input_tokens", "output_tokens", "total_tokens")
 
 
@@ -46,7 +48,7 @@ def parse_paths(paths: list[Path], long_command_len: int = 120) -> dict[str, Any
         if call["name"] == "shell" and isinstance(call["arguments"].get("command"), str)
     ]
     commands = structured_commands or _extract_commands(text)
-    operations = [_repair_operation(call) for call in calls if call["name"] == "repair_command"]
+    operations = [_repair_operation(call) for call in calls if call["name"] in COMMAND_REPAIR_TOOLS]
 
     failed_syntax = sum(1 for item in error_texts for line in item.splitlines() if SYNTAX_ERROR_RE.search(line))
     long_commands = [cmd for cmd in commands if len(cmd) >= long_command_len]
@@ -132,7 +134,9 @@ def _collect_tool_calls(documents: list[Any]) -> list[dict[str, Any]]:
 
 def _repair_operation(call: dict[str, Any]) -> dict[str, Any]:
     result = call.get("result")
-    after_len = call.get("after_len") or _first_len(result, ("content", "command", "after"))
+    after_len = call.get("after_len") or _first_len(
+        result, ("content", "command", "repaired_command", "after")
+    )
     payload_len = len(json.dumps(call["arguments"], sort_keys=True, ensure_ascii=False))
     before_len = call.get("before_len")
     return {

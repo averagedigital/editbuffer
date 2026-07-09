@@ -1,8 +1,7 @@
-Use the editbuffer command-buffer tools for long or fragile shell commands.
+Use editbuffer after a failed shell command when a small textual repair is enough.
 
 Policy:
-- If a shell command is longer than 120 characters, prepare it with `buffer_create` first.
-- If the command uses heredoc, nested quotes, regexes, JSON, YAML, or Python code, prepare it in the buffer first.
-- If a shell command fails with quoting, syntax, heredoc, or parse errors, repair the existing buffered command with `buffer_replace`, `buffer_insert_before`, `buffer_insert_after`, or `buffer_delete`; do not rewrite it from scratch.
-- Execute only after the buffer contains the final command.
+- Call `repair_failed_command` with the smallest unique `old_text` and its `new_text` replacement.
+- The tool only prepares text. Run its returned `repaired_command` with the shell yourself.
+- If the tool reports an ambiguous match, retry with a longer unique `old_text`.
 - When the verifier target file is created and checked, stop. Do not keep self-testing.

@@ -1,8 +1,8 @@
 {
   "condition": "treatment_command_buffer",
   "task_paths_file": "../task_paths.txt",
-  "agent": "goose",
-  "model": "openai/gpt://b1g8u4n2m20c0dqtqagj/deepseek-v4-flash/latest",
+  "agent": "scripts.editbuffer_goose_agent:EditbufferGoose",
+  "model": "openai/gpt://b1g8u4n2m20c0dqtqagj/deepseek-v4-flash",
   "n_attempts": 3,
   "n_concurrent": 1,
   "timeout_multiplier": 1.0,
@@ -13,10 +13,13 @@
   "mcp_config": "../../terminal_bench/configs/editbuffer.mcp.json",
   "extra_instruction_paths": ["../treatment_tool_policy.md"],
   "agent_env": {
+    "EDITBUFFER_PACKAGE": "editbuffer @ git+https://github.com/averagedigital/editbuffer.git@ec2a7b696f831f086ddea6d701286afc5403a5de",
+    "EDITBUFFER_HOOK_ENABLED": "1",
     "EDITBUFFER_MCP_ENABLED": "1",
-    "EDITBUFFER_MCP_COMMAND": "editbuffer-mcp",
     "OPENAI_HOST": "https://ai.api.cloud.yandex.net",
     "OPENAI_BASE_PATH": "v1/chat/completions"
   },
-  "agent_kwargs": {}
+  "agent_kwargs": {
+    "version": "v1.35.0"
+  }
 }

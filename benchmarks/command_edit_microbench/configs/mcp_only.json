@@ -1,5 +1,5 @@
 {
-  "condition": "baseline",
+  "condition": "mcp_only",
   "task_paths_file": "../task_paths.txt",
   "agent": "scripts.editbuffer_goose_agent:EditbufferGoose",
   "model": "openai/gpt://b1g8u4n2m20c0dqtqagj/deepseek-v4-flash",
@@ -9,11 +9,13 @@
   "internet_allowed": true,
   "env_file": ".env",
   "required_env": ["YANDEX_API_KEY", "YANDEX_FOLDER_ID", "OPENAI_API_KEY"],
-  "output_dir": "results/command_edit_microbench/baseline",
+  "output_dir": "results/command_edit_microbench/mcp_only",
+  "mcp_config": "../../terminal_bench/configs/editbuffer.mcp.json",
+  "extra_instruction_paths": ["../treatment_tool_policy.md"],
   "agent_env": {
     "EDITBUFFER_PACKAGE": "editbuffer @ git+https://github.com/averagedigital/editbuffer.git@ec2a7b696f831f086ddea6d701286afc5403a5de",
     "EDITBUFFER_HOOK_ENABLED": "0",
-    "EDITBUFFER_MCP_ENABLED": "0",
+    "EDITBUFFER_MCP_ENABLED": "1",
     "OPENAI_HOST": "https://ai.api.cloud.yandex.net",
     "OPENAI_BASE_PATH": "v1/chat/completions"
   },

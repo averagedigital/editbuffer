@@ -1,0 +1,26 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "local/repair-json-policy-command"
+description = "Repair a large broken shell command that writes JSON and Python files."
+keywords = ["command-repair", "json", "heredoc", "shell"]
+[[task.authors]]
+name = "averagedigital"
+
+[verifier]
+timeout_sec = 120.0
+
+[agent]
+timeout_sec = 300.0
+
+[environment]
+network_mode = "public"
+os = "linux"
+build_timeout_sec = 120.0
+cpus = 1
+memory_mb = 1024
+storage_mb = 2048
+gpus = 0
+allow_internet = true
+mcp_servers = []

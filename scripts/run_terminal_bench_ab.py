@@ -28,6 +28,7 @@ def build_commands(
     all_tasks: bool = False,
 ) -> list[dict[str, Any]]:
     configs = [_load_config(path) for path in config_paths]
+    _validate_configs(configs)
     runs = []
     for config in configs:
         attempts = n_attempts if n_attempts is not None else int(config.get("n_attempts", 1))
@@ -176,6 +177,29 @@ def _load_config(path: Path) -> dict[str, Any]:
     config = json.loads(path.read_text(encoding="utf-8"))
     config["_config_path"] = str(path)
     return config
+
+
+def _validate_configs(configs: list[dict[str, Any]]) -> None:
+    conditions = [str(config.get("condition")) for config in configs]
+    if len(conditions) != len(set(conditions)):
+        raise ValueError("comparison configs must have unique conditions")
+    for config in configs:
+        if str(config.get("model", "")).endswith("/latest"):
+            raise ValueError(f"model must not use /latest: {config.get('model')}")
+    if len(configs) < 2:
+        return
+    runtime_fields = {
+        "agent": lambda config: config.get("agent"),
+        "model": lambda config: config.get("model"),
+        "agent_kwargs.version": lambda config: (config.get("agent_kwargs") or {}).get("version"),
+        "agent_env.EDITBUFFER_PACKAGE": lambda config: (config.get("agent_env") or {}).get(
+            "EDITBUFFER_PACKAGE"
+        ),
+    }
+    for field, get_value in runtime_fields.items():
+        values = {get_value(config) for config in configs}
+        if len(values) != 1:
+            raise ValueError(f"comparison configs must share {field}")
 
 
 def _load_dotenv(path: Path, env: dict[str, str]) -> None:

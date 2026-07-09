@@ -1,0 +1,4 @@
+../tasks/repair_json_policy_command
+../tasks/repair_log_summary_command
+../tasks/repair_makefile_release_command
+../tasks/repair_python_cli_command

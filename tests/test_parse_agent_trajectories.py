@@ -106,8 +106,8 @@ def test_parse_goose_prefixed_editbuffer_repair_tool_names(tmp_path):
                             "type": "toolRequest",
                             "toolCall": {
                                 "value": {
-                                    "name": "editbuffer__repair_command",
-                                    "arguments": {"command_id": "cmd", "repaired_command": "echo ok"},
+                                    "name": "editbuffer__repair_failed_command",
+                                    "arguments": {"old_text": "bad", "new_text": "ok", "call_id": "cmd"},
                                 }
                             },
                         }
@@ -178,9 +178,9 @@ def test_parse_does_not_count_tool_mentions_as_calls(tmp_path):
 
 def test_parse_deduplicates_calls_and_joins_results_by_call_id(tmp_path):
     request = {
-        "tool_name": "editbuffer__repair_command",
+        "tool_name": "editbuffer__repair_failed_command",
         "tool_use_id": "call-1",
-        "arguments": {"command_id": "failed-1", "repaired_command": "echo ok"},
+        "arguments": {"old_text": "bad", "new_text": "ok", "call_id": "failed-1"},
         "command_length_before": 200,
     }
     first = tmp_path / "goose.txt"
@@ -195,7 +195,7 @@ def test_parse_deduplicates_calls_and_joins_results_by_call_id(tmp_path):
                         "tool_use_id": "call-1",
                         "structuredContent": {
                             "ok": True,
-                            "command": "echo ok",
+                            "repaired_command": "echo ok",
                         },
                     },
                     {
