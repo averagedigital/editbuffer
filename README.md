@@ -201,43 +201,32 @@ Claude Desktop and generic MCP client examples are in
 
 The server exposes:
 
-- `buffer_append`
-- `buffer_list`
-- `buffer_view`
-- `buffer_edit`
-- `buffer_replace`
-- `buffer_insert_before`
-- `buffer_insert_after`
-- `buffer_delete`
-- `buffer_history`
-- `buffer_rollback`
-- `buffer_commit`
-- `tool_history`
-- `tool_select`
-- `last_failed`
-- `select_last_failed`
-- `edit_last_failed`
+- `repair_failed_command`
 
-Buffers are in-memory and live for the MCP server process. The MCP layer calls
-the same core API and does not implement separate edit semantics.
-
-Use the first-class selection tools for normal agent use:
+The tool applies one exact replacement to the latest failed shell command in
+the current working-directory scope:
 
 ```json
 {
-  "buffer_id": "answer",
-  "target": {"type": "exact", "text": "old"},
-  "text": "new"
+  "old_text": "--bad-flag",
+  "new_text": "--good-flag"
 }
 ```
 
-`buffer_edit` remains available for raw JSON operations.
+Pass `call_id` only when a specific failed shell call is already known. The
+result contains `original_command`, `repaired_command`, and the replaced range.
+The MCP server never executes the returned command; the host agent must run it
+with its own shell tool.
 
-MCP calls are recorded in SQLite-backed history. `tool_history` returns recent
-calls, newest first. `last_failed`, `select_last_failed`, and `edit_last_failed`
-let the model repair the latest failed recorded call without first asking for
-history. `tool_select` creates a pending buffer from selectable content in any
-previous call.
+To capture host shell failures, wire `editbuffer-hook` into the host lifecycle:
+
+- Codex: `PostToolUse` for `Bash`; failed calls add repair context.
+- Claude Code: `PostToolUseFailure` for `Bash`; failed calls add repair context.
+- goose: `PostToolUseFailure` for `developer__shell`; capture only.
+
+These are host-specific adapters, not universal dispatcher capture. Example
+configs live in [`examples/hooks`](examples/hooks); exact setup and limitations
+are documented in [`docs/mcp.md`](docs/mcp.md).
 
 ## Examples
 
@@ -255,8 +244,8 @@ This project is not:
 - a replacement for coding agents;
 - a generic output quality evaluator.
 
-Persistent storage, atomic operation batches, TypeScript bindings, and
-syntax-aware block parsing are future work.
+Atomic operation batches, TypeScript bindings, and syntax-aware block parsing
+are future work.
 
 ## Development
 

@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUseFailure": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "editbuffer-hook --provider claude"
+          }
+        ]
+      }
+    ]
+  }
+}

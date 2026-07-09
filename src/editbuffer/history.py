@@ -120,7 +120,7 @@ class ToolHistoryStore:
         self.cleanup()
         identifier = call_id or f"call-{uuid4().hex}"
         when = timestamp or datetime.now(UTC)
-        resolved_kind = tool_kind or ("shell" if _is_shell_tool(tool_name) else None)
+        resolved_kind = tool_kind or ("shell" if is_shell_tool(tool_name) else None)
         is_shell = resolved_kind == "shell"
         source_command = command or _command_from(arguments or {}) if is_shell else None
         stored_command = (
@@ -422,8 +422,8 @@ def _command_from(value: dict[str, Any]) -> str | None:
     return None
 
 
-def _is_shell_tool(tool_name: str) -> bool:
-    normalized = tool_name.lower().replace("-", "_")
+def is_shell_tool(tool_name: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9_]+", "__", tool_name.lower())
     return normalized in SHELL_TOOL_NAMES or any(
         normalized.endswith(f"__{name}") for name in SHELL_TOOL_NAMES
     )

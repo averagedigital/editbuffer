@@ -1,0 +1,5 @@
+{
+  "name": "editbuffer",
+  "version": "0.2.0",
+  "description": "Record failed goose shell calls in editbuffer history"
+}

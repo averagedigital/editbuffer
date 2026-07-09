@@ -1,7 +1,7 @@
 # MCP client setup
 
-`editbuffer-mcp` is a local STDIO MCP server. It keeps buffers in memory, so
-buffers exist only while that server process is running.
+`editbuffer-mcp` is a local STDIO MCP server backed by the same SQLite history
+as `editbuffer-hook`.
 
 Install the MCP extra:
 
@@ -47,73 +47,83 @@ reported by `which editbuffer-mcp`.
 
 Use STDIO transport with command `editbuffer-mcp` and no arguments.
 
-The server exposes these tools:
+The server exposes one tool:
 
-- `buffer_append`
-- `buffer_list`
-- `buffer_view`
-- `buffer_edit`
-- `buffer_replace`
-- `buffer_insert_before`
-- `buffer_insert_after`
-- `buffer_delete`
-- `buffer_history`
-- `buffer_rollback`
-- `buffer_commit`
-- `tool_history`
-- `tool_select`
-- `last_failed`
-- `select_last_failed`
-- `edit_last_failed`
+- `repair_failed_command`
 
-Use `buffer_edit` with JSON operations such as:
+Input:
 
 ```json
 {
-  "op": "replace",
-  "target": {
-    "type": "context",
-    "before": "return ",
-    "text": "old_value",
-    "after": "\n"
-  },
-  "text": "new_value"
+  "old_text": "--bad-flag",
+  "new_text": "--good-flag",
+  "call_id": "optional-failed-call-id"
 }
 ```
 
-For normal agent use, prefer the explicit selection tools:
+`old_text` must occur exactly once. `call_id` is optional; without it, the tool
+uses the latest failed shell call in the current scope.
 
-- `buffer_replace`
-- `buffer_insert_before`
-- `buffer_insert_after`
-- `buffer_delete`
-
-They take `buffer_id`, `target`, and, except delete, `text`.
-
-Errors are intentional recovery signals. Missing, ambiguous, stale, invalid, or
-unsafe fuzzy selections fail without mutating the buffer.
-
-Editbuffer MCP calls are recorded in SQLite-backed history:
+Output:
 
 ```json
-[
-  {
-    "call_id": "call-...",
-    "tool_name": "buffer_edit",
-    "status": "success"
-  }
-]
+{
+  "ok": true,
+  "source_call_id": "call-...",
+  "original_command": "pytest --bad-flag",
+  "repaired_command": "pytest --good-flag",
+  "replacement": {"start": 7, "end": 17}
+}
 ```
 
-Use `tool_select` with a `call_id` to create a new pending buffer from selectable
-content in an old call instead of generating it again. Use `select_last_failed`
-or `edit_last_failed` to repair the most recent failed recorded call directly.
-By default `tool_history` returns the last 10 calls, newest first.
+The server does not execute commands. Run `repaired_command` with the host
+agent's shell tool. Missing or repeated `old_text`, unknown calls, successful
+calls, and non-shell calls return structured error envelopes.
+
+## History scope
+
+`editbuffer-mcp` scopes implicit lookup by `EDITBUFFER_CWD`, or by its process
+working directory when that variable is unset. Optional
+`EDITBUFFER_SESSION_ID` and `EDITBUFFER_PROVIDER` narrow the scope further.
+
+The hook records `session_id`, `cwd`, provider, tool kind, and call id when the
+host payload supplies them. Both processes use `EDITBUFFER_HISTORY_DB`, which
+defaults to `~/.editbuffer/history.sqlite3`.
+
+## Host hooks
+
+Install the package so `editbuffer-hook` is on the host's `PATH`, then adapt one
+of the configs in `examples/hooks`.
+
+| Host | Event | Matcher | Model feedback |
+| --- | --- | --- | --- |
+| Codex | `PostToolUse` | `^Bash$` | `additionalContext` after detected failure |
+| Claude Code | `PostToolUseFailure` | `^Bash$` | `additionalContext` |
+| goose 1.35+ | `PostToolUseFailure` | `^developer__shell$` | none; capture only |
+
+Host contracts: [Codex hooks](https://developers.openai.com/codex/hooks),
+[Claude Code hooks](https://code.claude.com/docs/en/hooks), and the
+[goose 1.35.0 release](https://github.com/aaif-goose/goose/releases/tag/v1.35.0).
+
+Codex reports non-zero Bash exits through `PostToolUse`; it does not expose a
+separate failure event. Its current hook interception does not cover every
+`unified_exec` path, so this adapter must not be described as universal shell
+capture.
+
+Claude Code has a dedicated failure event and a documented
+`hookSpecificOutput.additionalContext` response.
+
+The goose adapter intentionally prints `{}` after recording. Current goose
+releases expose hooks, but this project does not assume a model-feedback output
+contract without a verified host-level test.
+
+The hook ignores command-shaped fields on non-shell tools, so file or MCP
+payloads cannot become repair targets.
 
 ## Limits
 
-- No persistence across MCP server restarts.
 - No authentication or network server mode.
 - No concurrent multi-client coordination.
-- No batch transaction API.
-- Fuzzy selection is opt-in and may reject close candidates.
+- No command execution or replay inside the MCP server.
+- No fuzzy repair; ambiguity is an explicit error.
+- No universal capture outside the documented host hook events.

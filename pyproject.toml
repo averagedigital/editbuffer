@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "editbuffer"
-version = "0.2.3"
+version = "0.3.0"
 description = "Selection-based mutable output buffer for LLM tools"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -21,6 +21,7 @@ classifiers = [
 [project.scripts]
 editbuffer = "editbuffer.cli:main"
 editbuffer-mcp = "editbuffer.mcp_server:main"
+editbuffer-hook = "editbuffer.hook:main"
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.27,<2"]

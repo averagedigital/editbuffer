@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUseFailure": [
+      {
+        "matcher": "^developer__shell$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "editbuffer-hook --provider goose"
+          }
+        ]
+      }
+    ]
+  }
+}
