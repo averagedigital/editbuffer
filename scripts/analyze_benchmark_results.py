@@ -25,9 +25,9 @@ def analyze(rows: list[dict[str, Any]], bootstrap_samples: int = 2000) -> dict[s
     paired = _paired(rows)
     baseline = [row for row in rows if row.get("condition") == "baseline"]
     treatment = [row for row in rows if row.get("condition") != "baseline"]
-    delta_pass = (
-        aggregate.get("treatment_command_buffer", {}).get("pass_rate", 0.0)
-        - aggregate.get("baseline", {}).get("pass_rate", 0.0)
+    delta_pass = _difference(
+        aggregate.get("baseline", {}).get("pass_rate"),
+        aggregate.get("treatment_command_buffer", {}).get("pass_rate"),
     )
     return {
         "aggregate": aggregate,
@@ -59,9 +59,13 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "mean_total_tokens": _mean_field(rows, "total_tokens"),
         "mean_wall_time_sec": _mean_field(rows, "wall_time_sec"),
         "mean_agent_time_sec": _mean_field(rows, "agent_time_sec"),
-        "mean_command_buffer_operations": _mean_field(rows, "command_buffer_operations"),
+        "mean_command_repair_operations": _mean_field(rows, "command_repair_operations"),
         "mean_estimated_saved_chars": _mean_field(rows, "estimated_saved_chars"),
         "mean_failed_syntax_or_quoting_errors": _mean_field(rows, "failed_syntax_or_quoting_errors"),
+        "cost_usd_coverage": _coverage(rows, "cost_usd"),
+        "total_tokens_coverage": _coverage(rows, "total_tokens"),
+        "agent_time_sec_coverage": _coverage(rows, "agent_time_sec"),
+        "command_repair_operations_coverage": _coverage(rows, "command_repair_operations"),
     }
 
 
@@ -81,11 +85,11 @@ def _per_task(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "treatment_trials": len(treatment),
                 "success_rate_baseline": _mean_field(base, "success"),
                 "success_rate_treatment": _mean_field(treatment, "success"),
-                "delta_success": _mean_field(treatment, "success") - _mean_field(base, "success"),
+                "delta_success": _delta_mean(base, treatment, "success"),
                 "delta_cost_usd": _delta_mean(base, treatment, "cost_usd"),
                 "delta_tokens": _delta_mean(base, treatment, "total_tokens"),
                 "delta_time_sec": _delta_mean(base, treatment, "agent_time_sec"),
-                "command_buffer_operations": _mean_field(treatment, "command_buffer_operations"),
+                "command_repair_operations": _mean_field(treatment, "command_repair_operations"),
                 "estimated_saved_chars": _mean_field(treatment, "estimated_saved_chars"),
                 "failed_syntax_baseline": _mean_field(base, "failed_syntax_or_quoting_errors"),
                 "failed_syntax_treatment": _mean_field(treatment, "failed_syntax_or_quoting_errors"),
@@ -161,9 +165,19 @@ def _delta_mean(base: list[dict[str, Any]], treatment: list[dict[str, Any]], key
     return mean(right) - mean(left)
 
 
-def _mean_field(rows: list[dict[str, Any]], key: str) -> float:
+def _mean_field(rows: list[dict[str, Any]], key: str) -> float | None:
     values = _values(rows, key)
-    return mean(values) if values else 0.0
+    return mean(values) if values else None
+
+
+def _coverage(rows: list[dict[str, Any]], key: str) -> int:
+    return len(_values(rows, key))
+
+
+def _difference(left: float | None, right: float | None) -> float | None:
+    if left is None or right is None:
+        return None
+    return right - left
 
 
 def _values(rows: list[dict[str, Any]], key: str) -> list[float]:

@@ -18,6 +18,24 @@ def test_analyze_paired_delta_and_mcnemar():
     assert result["per_task"][1]["delta_tokens"] == -10
 
 
+def test_analyze_preserves_missing_metrics_and_reports_coverage():
+    rows = [
+        _row("baseline", "task-a", 1, 1, None, None),
+        _row("treatment_command_buffer", "task-a", 1, 1, None, None),
+    ]
+
+    result = analyze(rows, bootstrap_samples=10)
+
+    baseline = result["aggregate"]["baseline"]
+    assert baseline["mean_cost_usd"] is None
+    assert baseline["mean_total_tokens"] is None
+    assert baseline["cost_usd_coverage"] == 0
+    assert baseline["total_tokens_coverage"] == 0
+    assert result["per_task"][0]["delta_cost_usd"] is None
+    assert result["per_task"][0]["delta_tokens"] is None
+    assert result["statistics"]["sign_test_cost_p"] is None
+
+
 def _row(condition, task, attempt, success, cost, tokens):
     return {
         "condition": condition,
@@ -28,7 +46,7 @@ def _row(condition, task, attempt, success, cost, tokens):
         "cost_usd": cost,
         "total_tokens": tokens,
         "agent_time_sec": 5,
-        "command_buffer_operations": 1 if condition != "baseline" else 0,
+        "command_repair_operations": 1 if condition != "baseline" else 0,
         "estimated_saved_chars": 40 if condition != "baseline" else 0,
         "failed_syntax_or_quoting_errors": 0,
     }

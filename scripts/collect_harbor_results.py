@@ -16,7 +16,7 @@ except ImportError:
 
 def collect(job_dirs: list[Path], condition: str) -> list[dict[str, Any]]:
     rows = []
-    for job_dir in job_dirs:
+    for job_dir in _expand_job_dirs(job_dirs):
         job_config = _load_json(job_dir / "config.json")
         job_result = _load_json(job_dir / "result.json")
         for result_path in _trial_result_paths(job_dir):
@@ -29,18 +29,21 @@ def collect(job_dirs: list[Path], condition: str) -> list[dict[str, Any]]:
                     trial_dir / "agent" / "trajectory.json",
                     trial_dir / "agent.log",
                     trial_dir / "trajectory.json",
-                    trial_dir / "verifier" / "test-stdout.txt",
-                    trial_dir / "verifier.log",
                 ]
             )
-            exception = _string_at(result, ("exception", "error")) or _job_exception(job_result, trial_dir.name)
+            exception = _exception(result) or _job_exception(job_result, trial_dir.name)
+            parsed_metrics = {
+                key: value
+                for key, value in parsed.items()
+                if key not in {"operations", "input_tokens", "output_tokens", "cache_tokens", "total_tokens"}
+            }
             rows.append(
                 {
                     "condition": condition,
                     "job_dir": str(job_dir),
                     "trial_dir": str(trial_dir),
                     "task_name": _task_name(trial_dir, trial_config, result),
-                    "attempt": _attempt(trial_dir, trial_config),
+                    "attempt": _attempt(trial_dir, trial_config, job_dir, job_config),
                     "reward": _reward(result),
                     "success": _success(result),
                     "verifier_stdout": _string_at(result, ("verifier_stdout", "stdout")),
@@ -50,26 +53,47 @@ def collect(job_dirs: list[Path], condition: str) -> list[dict[str, Any]]:
                     "exception": exception,
                     "wall_time_sec": _number_at(result, ("wall_time_sec", "duration_sec", "elapsed_sec")),
                     "agent_time_sec": _number_at(result, ("agent_time_sec", "agent_execution_time_sec")),
-                    "input_tokens": _usage(result, "input_tokens") or parsed.get("input_tokens"),
-                    "output_tokens": _usage(result, "output_tokens") or parsed.get("output_tokens"),
-                    "cache_tokens": _usage(result, "cache_tokens") or parsed.get("cache_tokens"),
-                    "total_tokens": _usage(result, "total_tokens") or parsed.get("total_tokens"),
+                    **parsed_metrics,
+                    "input_tokens": _coalesce(_usage(result, "input_tokens"), parsed.get("input_tokens")),
+                    "output_tokens": _coalesce(_usage(result, "output_tokens"), parsed.get("output_tokens")),
+                    "cache_tokens": _coalesce(_usage(result, "cache_tokens"), parsed.get("cache_tokens")),
+                    "total_tokens": _coalesce(_usage(result, "total_tokens"), parsed.get("total_tokens")),
                     "cost_usd": _usage(result, "cost_usd"),
                     "git_commit": _string_at(job_config, ("git_commit", "git_sha")),
                     "model": _string_at(job_config, ("model", "model_name")),
                     "agent": _string_at(job_config, ("agent", "agent_name")),
                     "harbor_version": _string_at(job_config, ("harbor_version",)),
                     "dataset": _string_at(job_config, ("dataset", "dataset_name")),
-                    **{k: v for k, v in parsed.items() if k != "operations"},
                 }
             )
     return rows
+
+
+def _expand_job_dirs(paths: list[Path]) -> list[Path]:
+    out: list[Path] = []
+    for path in paths:
+        if (path / "config.json").exists() and (path / "result.json").exists() and _trial_result_paths(path):
+            out.append(path)
+            continue
+        children = sorted(child for child in path.iterdir() if child.is_dir()) if path.exists() else []
+        out.extend(child for child in children if _trial_result_paths(child))
+    return out
 
 
 def _trial_result_paths(job_dir: Path) -> list[Path]:
     paths = list(job_dir.glob("trials/**/result.json"))
     paths.extend(path for path in job_dir.glob("*/result.json") if path.parent != job_dir)
     return sorted(set(paths))
+
+
+def _exception(result: dict[str, Any]) -> str | None:
+    value = _string_at(result, ("exception", "error"))
+    if value:
+        return value
+    info = result.get("exception_info")
+    if isinstance(info, dict):
+        return _string_at(info, ("exception_type", "type", "name"))
+    return None
 
 
 def write_outputs(rows: list[dict[str, Any]], jsonl_path: Path, csv_path: Path) -> None:
@@ -101,12 +125,25 @@ def _task_name(trial_dir: Path, config: dict[str, Any], result: dict[str, Any]) 
     return trial_dir.name.split("__", 1)[0]
 
 
-def _attempt(trial_dir: Path, config: dict[str, Any]) -> int:
-    value = config.get("attempt")
-    if isinstance(value, int):
-        return value
-    match = re.search(r"(?:attempt|__)(\d+)$", trial_dir.name)
-    return int(match.group(1)) if match else 1
+def _attempt(
+    trial_dir: Path,
+    trial_config: dict[str, Any],
+    job_dir: Path,
+    job_config: dict[str, Any],
+) -> int:
+    for config in (trial_config, job_config):
+        value = config.get("attempt")
+        if isinstance(value, int):
+            return value
+    for name in (job_dir.name, trial_dir.name):
+        match = re.search(r"(?:attempt-|__)(\d+)$", name)
+        if match:
+            return int(match.group(1))
+    return 1
+
+
+def _coalesce(*values: Any) -> Any:
+    return next((value for value in values if value is not None), None)
 
 
 def _reward(result: dict[str, Any]) -> float:
